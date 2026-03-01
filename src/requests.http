@@ -1,0 +1,27 @@
+### 1. Создаем
+POST http://localhost:8080/tasks
+Content-Type: application/json
+
+{
+  "topic": "Старая тема",
+  "importance": 1
+}
+
+### 2. Запоминаем ID (например, 1) и Обновляем (PUT)
+PUT http://localhost:8080/tasks/1
+Content-Type: application/json
+
+{
+  "topic": "Новая крутая тема",
+  "importance": 5,
+  "shortDescription": "Мы обновили данные!"
+}
+
+### 3. Проверяем результат
+GET http://localhost:8080/tasks/1
+
+### 4. Завершаем задачу
+PATCH http://localhost:8080/tasks/1/toggle
+
+### 5. Проверяем результат
+GET http://localhost:8080/tasks/1
