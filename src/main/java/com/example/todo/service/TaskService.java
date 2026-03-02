@@ -1,36 +1,42 @@
 package com.example.todo.service;
 
 import com.example.todo.entity.Task;
+import com.example.todo.entity.User;
 import com.example.todo.exception.ResourceNotFoundException;
 import com.example.todo.repository.TaskRepository;
+import com.example.todo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 public class TaskService {
 
-    private final TaskRepository repository;
+    private final TaskRepository taskRepository;
+    private final UserRepository userRepository;
 
-    public Task addTask(Task task) {
-        return repository.save(task);
+    public Task addTask(Task task, String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with username: " + username));
+        task.setUser(user);
+        return taskRepository.save(task);
     }
 
-    public Page<Task> getAllTasks(Pageable pageable) {
-        return repository.findAll(pageable);
+    public Page<Task> getAllTasks(Pageable pageable, String username) {
+        return taskRepository.findByUserUsername(username, pageable);
     }
 
-    public Task getTaskById(Long id) {
-        return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Task not found with id: " + id));
+    public Task getTaskById(Long id, String username) {
+        return taskRepository.findByIdAndUserUsername(id, username)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Задача с id " + id + " не найдена или у вас нет к ней доступа"
+                ));
     }
 
-    public Task updateTask(Long id, Task updatedTask) {
-        Task task = getTaskById(id);
+    public Task updateTask(Long id, Task updatedTask, String username) {
+        Task task = getTaskById(id, username);
 
         if (updatedTask.getTopic() != null) task.setTopic(updatedTask.getTopic());
         if (updatedTask.getShortDescription() != null) task.setShortDescription(updatedTask.getShortDescription());
@@ -41,17 +47,17 @@ public class TaskService {
         if (updatedTask.getPicture() != null) task.setPicture(updatedTask.getPicture());
         if (updatedTask.getDeadline() != null) task.setDeadline(updatedTask.getDeadline());
 
-        return repository.save(task);
+        return taskRepository.save(task);
     }
 
-    public void deleteTask(Long id) {
-        repository.deleteById(id);
+    public void deleteTask(Long id, String username) {
+        taskRepository.deleteById(id);
     }
 
-    public void toggleTask(Long id) {
-        Task task = getTaskById(id);
+    public void toggleTask(Long id, String username) {
+        Task task = getTaskById(id, username);
         task.setComplete(!task.isComplete());
-        repository.save(task);
+        taskRepository.save(task);
     }
 
 

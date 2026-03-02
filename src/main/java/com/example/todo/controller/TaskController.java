@@ -14,8 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/tasks")
@@ -30,9 +29,10 @@ public class TaskController {
     // post request
     @Operation(summary = "create new task", description = "adding new task to db")
     @PostMapping
-    public TaskResponse addTask(@Valid @RequestBody TaskRequest request) {
+    public TaskResponse addTask(@Valid @RequestBody TaskRequest request,
+                                Principal principal) {
         Task entity = taskMapper.toEntity(request);
-        Task createdEntity = taskService.addTask(entity);
+        Task createdEntity = taskService.addTask(entity, principal.getName());
         return taskMapper.toResponse(createdEntity);
     }
 
@@ -40,14 +40,15 @@ public class TaskController {
     @Operation(summary = "get all tasks (with pagenation)",
             description = "page (start with 0), size, sort")
     @GetMapping
-    public Page<TaskResponse> getAllTasks(@PageableDefault(size = 5, sort = "createDate") Pageable pageable) {
-        return taskService.getAllTasks(pageable).map(taskMapper::toResponse);
+    public Page<TaskResponse> getAllTasks(@PageableDefault(size = 5, sort = "createDate") Pageable pageable,
+                                          Principal principal) {
+        return taskService.getAllTasks(pageable, principal.getName()).map(taskMapper::toResponse);
     }
 
     @Operation(summary = "get task", description = "return task by id ")
     @GetMapping("/{id}")
-    public TaskResponse getTaskById(@PathVariable Long id) {
-        Task task = taskService.getTaskById(id);
+    public TaskResponse getTaskById(@PathVariable Long id, Principal principal) {
+        Task task = taskService.getTaskById(id, principal.getName());
 
         return taskMapper.toResponse(task);
 
@@ -56,18 +57,19 @@ public class TaskController {
     //delete request
     @Operation(summary = "delete task", description = "delete task by id")
     @DeleteMapping("/{id}")
-    public String deleteTask(@PathVariable Long id) {
-        taskService.deleteTask(id);
+    public String deleteTask(@PathVariable Long id, Principal principal) {
+        taskService.deleteTask(id, principal.getName());
         return "Task was deleted successfully!";
     }
 
     //put request
     @Operation(summary = "update task", description = "update task by id")
     @PutMapping("/{id}")
-    public TaskResponse updateTask(@PathVariable Long id, @Valid @RequestBody TaskRequest updatedTask) {
+    public TaskResponse updateTask(@PathVariable Long id, @Valid @RequestBody TaskRequest updatedTask,
+                                   Principal principal) {
         Task entity = taskMapper.toEntity(updatedTask);
 
-        Task updatedEntity = taskService.updateTask(id, entity);
+        Task updatedEntity = taskService.updateTask(id, entity, principal.getName());
 
         return taskMapper.toResponse(updatedEntity);
     }
@@ -75,8 +77,8 @@ public class TaskController {
     //patch request
     @Operation(summary = "toggle task", description = "toggle task by id")
     @PatchMapping("/{id}/toggle")
-    public void toggleTaskPatch(@PathVariable Long id) {
-        taskService.toggleTask(id);
+    public void toggleTaskPatch(@PathVariable Long id, Principal principal) {
+        taskService.toggleTask(id, principal.getName());
     }
 
 }
