@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 
 @Data
 public class TaskRequest {
@@ -20,4 +22,5 @@ public class TaskRequest {
     @Min(1) @Max(10)
     private Integer importance;
 
+    private LocalDateTime deadline;
 }

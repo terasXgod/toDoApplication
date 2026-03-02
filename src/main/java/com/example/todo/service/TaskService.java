@@ -37,6 +37,7 @@ public class TaskService {
         if (updatedTask.getLink() != null) task.setLink(updatedTask.getLink());
         if (updatedTask.getLongDescription() != null) task.setLongDescription(updatedTask.getLongDescription());
         if (updatedTask.getPicture() != null) task.setPicture(updatedTask.getPicture());
+        if (updatedTask.getDeadline() != null) task.setDeadline(updatedTask.getDeadline());
 
         return repository.save(task);
     }

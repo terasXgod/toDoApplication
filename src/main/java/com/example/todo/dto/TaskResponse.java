@@ -14,5 +14,6 @@ public class TaskResponse {
     private int importance;
     private LocalDateTime createDate;
     private LocalDateTime endDate;
+    private LocalDateTime deadline;
 
 }

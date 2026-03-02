@@ -17,6 +17,7 @@ public class TaskMapper {
         response.setImportance(task.getImportance());
         response.setEndDate(task.getEndDate());
         response.setCreateDate(task.getCreateDate());
+        response.setDeadline(task.getDeadline());
         return response;
     }
 
@@ -26,6 +27,7 @@ public class TaskMapper {
         task.setShortDescription(request.getShortDescription());
         task.setImportance(request.getImportance());
         task.setLongDescription(request.getLongDescription());
+        task.setDeadline(request.getDeadline());
         return task;
     }
 

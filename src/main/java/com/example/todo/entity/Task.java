@@ -41,6 +41,7 @@ public class Task {
     private LocalDateTime createDate;
     private LocalDateTime updateDate;
     private LocalDateTime endDate;
+    private LocalDateTime deadline;
 
 
     @PrePersist
