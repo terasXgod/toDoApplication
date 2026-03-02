@@ -18,10 +18,20 @@ Content-Type: application/json
 }
 
 ### 3. Проверяем результат
-GET http://localhost:8080/tasks/1
+GET http://localhost:8080/tasks
 
 ### 4. Завершаем задачу
 PATCH http://localhost:8080/tasks/1/toggle
 
 ### 5. Проверяем результат
 GET http://localhost:8080/tasks/1
+
+### 6. авторизуемся
+POST http://localhost:8080/auth/register
+Content-Type: application/json
+
+{
+  "username": "user1",
+  "password": "password123",
+  "email": "gay@mail.ru"
+}

@@ -16,16 +16,17 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(name = "tasks")
 public class Task {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "У задачи должна быть тема")
-    @Size(min = 3, max = 100, message = "Тема должна быть от 3 до 100 символов")
+    @NotBlank(message = "Task need topic")
+    @Size(min = 3, max = 100, message = "topic length must be from 3 to 100 symbols")
     private String topic;
 
-    @Size(max = 255, message = "Краткое описание слишком длинное")
+    @Size(max = 255, message = "short description is too long")
     private String shortDescription;
 
     private String longDescription;
@@ -34,14 +35,17 @@ public class Task {
     private String picture;
     private boolean isComplete = false;
 
-    @Min(value = 1, message = "Важность не может быть меньше 1")
-    @Max(value = 10, message = "Важность не может быть больше 10")
+    @Min(value = 1, message = "importance must be more than 1")
+    @Max(value = 10, message = "importance must be less than 10")
     private Integer importance;
 
     private LocalDateTime createDate;
     private LocalDateTime updateDate;
     private LocalDateTime endDate;
     private LocalDateTime deadline;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
 
     @PrePersist

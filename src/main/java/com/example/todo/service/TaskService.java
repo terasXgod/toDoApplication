@@ -4,6 +4,8 @@ import com.example.todo.entity.Task;
 import com.example.todo.exception.ResourceNotFoundException;
 import com.example.todo.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 
@@ -19,8 +21,8 @@ public class TaskService {
         return repository.save(task);
     }
 
-    public List<Task> getAllTasks() {
-        return repository.findAll();
+    public Page<Task> getAllTasks(Pageable pageable) {
+        return repository.findAll(pageable);
     }
 
     public Task getTaskById(Long id) {
