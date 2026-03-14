@@ -1,0 +1,37 @@
+# language: yaml
+version: '3.8'
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - '8080:8080'
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_SHOW_SQL=true
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - '5432:5432'
+    env_file:
+      - .env
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  frontend:
+    build: 
+      context: ./frontend      # Ищет Dockerfile в папке frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"            # Открываем на стандартном порту веба (80)
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
