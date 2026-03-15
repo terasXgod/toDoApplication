@@ -1,7 +1,7 @@
 package com.example.todo.controller;
 
 import com.example.todo.dto.JwtAuthentificationDto;
-import com.example.todo.dto.UserRequest;
+import com.example.todo.dto.AuthRequest;
 import com.example.todo.service.AuthService;
 import com.example.todo.service.JwtService;
 import io.jsonwebtoken.JwtException;
@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -26,7 +27,7 @@ public class AuthController {
 
     @Operation(summary = "sign up", description = "register new user")
     @PostMapping("/register")
-    public ResponseEntity<?> registerNewUser(@Valid @RequestBody UserRequest request) {
+    public ResponseEntity<?> registerNewUser(@Valid @RequestBody AuthRequest request) {
         log.info("Registration attempt for user: {}", request.getUsername());
 
         try {
@@ -41,7 +42,7 @@ public class AuthController {
 
     @Operation(summary = "login", description = "if user is authenticated")
     @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody UserRequest request) {
+    public ResponseEntity<?> login(@Valid @RequestBody AuthRequest request) {
         log.info("Login attempt for user: {}", request.getUsername());
 
         try {

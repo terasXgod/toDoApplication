@@ -38,7 +38,8 @@ public class User implements UserDetails{
     private String email;
 
     private String tgId;
-    private String avatar;
+    private String avatarUrl;
+    private String description;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Task> tasks = new ArrayList<>();

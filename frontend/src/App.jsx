@@ -1,19 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import apiDocs from '../musor/api-docs.json'
+import { useEffect, useRef, useState } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
+import AuthPage from './pages/AuthPage.jsx'
+import TasksPage from './pages/TasksPage.jsx'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const STORAGE_KEY = 'todo-jwt-session'
-
-const METHOD_ORDER = ['get', 'post', 'put', 'patch', 'delete']
-
-const METHOD_CLASS = {
-  get: 'method-get',
-  post: 'method-post',
-  put: 'method-put',
-  patch: 'method-patch',
-  delete: 'method-delete',
-}
 
 const EMPTY_FORM = {
   topic: '',
@@ -23,20 +15,120 @@ const EMPTY_FORM = {
   deadline: '',
 }
 
-function extractTokens(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return { accessToken: '', refreshToken: '' }
+function normalizeToken(value) {
+  if (typeof value !== 'string') {
+    return ''
   }
 
-  const accessToken =
-    payload.accessToken ??
-    payload.access_token ??
-    payload.token ??
-    payload.jwt ??
-    ''
+  return value.trim().replace(/^Bearer\s+/i, '')
+}
 
-  const refreshToken =
-    payload.refreshToken ?? payload.refresh_token ?? payload.refresh ?? ''
+function readStoredSession() {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) {
+    return { username: '', accessToken: '', refreshToken: '' }
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    return {
+      username: parsed.username ?? '',
+      accessToken: normalizeToken(parsed.accessToken),
+      refreshToken: normalizeToken(parsed.refreshToken),
+    }
+  } catch {
+    return { username: '', accessToken: '', refreshToken: '' }
+  }
+}
+
+function writeStoredSession(session) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(STORAGE_KEY)
+}
+
+function findTokenValue(source, keys) {
+  if (!source || typeof source !== 'object') {
+    return ''
+  }
+
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) {
+      const normalized = normalizeToken(value)
+      if (normalized) {
+        return normalized
+      }
+    }
+  }
+
+  for (const value of Object.values(source)) {
+    if (value && typeof value === 'object') {
+      const nested = findTokenValue(value, keys)
+      if (nested) {
+        return nested
+      }
+    }
+  }
+
+  return ''
+}
+
+function findJwtByShape(source) {
+  if (!source || typeof source !== 'object') {
+    return ''
+  }
+
+  const jwtShape = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/
+
+  for (const value of Object.values(source)) {
+    if (typeof value === 'string') {
+      const normalized = normalizeToken(value)
+      if (jwtShape.test(normalized)) {
+        return normalized
+      }
+    }
+
+    if (value && typeof value === 'object') {
+      const nested = findJwtByShape(value)
+      if (nested) {
+        return nested
+      }
+    }
+  }
+
+  return ''
+}
+
+function extractTokens(payload, headers) {
+  const headerAccessToken = normalizeToken(
+    headers?.get('Authorization') ?? headers?.get('authorization') ?? headers?.get('X-Auth-Token') ?? '',
+  )
+  const headerRefreshToken = normalizeToken(
+    headers?.get('X-Refresh-Token') ?? headers?.get('x-refresh-token') ?? '',
+  )
+
+  if (!payload || typeof payload !== 'object') {
+    return { accessToken: headerAccessToken, refreshToken: headerRefreshToken }
+  }
+
+  const accessToken = findTokenValue(payload, [
+    'accessToken',
+    'access_token',
+    'token',
+    'jwt',
+    'access',
+    'accessJwt',
+  ]) || headerAccessToken || findJwtByShape(payload)
+
+  const refreshToken = findTokenValue(payload, [
+    'refreshToken',
+    'refresh_token',
+    'refresh',
+    'refreshJwt',
+  ]) || headerRefreshToken
 
   return { accessToken, refreshToken }
 }
@@ -55,10 +147,12 @@ function normalizeDateTimeLocal(value) {
   if (!value) {
     return ''
   }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return ''
   }
+
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
   return local.toISOString().slice(0, 16)
 }
@@ -84,69 +178,40 @@ function createRequestBody(taskForm) {
 
 function App() {
   const [tasks, setTasks] = useState([])
+  const [selectedTaskId, setSelectedTaskId] = useState(null)
   const [authMode, setAuthMode] = useState('login')
   const [isLoading, setIsLoading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-
   const [authForm, setAuthForm] = useState({
     username: '',
     password: '',
     email: '',
   })
-
-  const [session, setSession] = useState(() => {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return { username: '', accessToken: '', refreshToken: '' }
-    }
-
-    try {
-      const parsed = JSON.parse(raw)
-      return {
-        username: parsed.username ?? '',
-        accessToken: parsed.accessToken ?? '',
-        refreshToken: parsed.refreshToken ?? '',
-      }
-    } catch {
-      return { username: '', accessToken: '', refreshToken: '' }
-    }
-  })
-
+  const [session, setSession] = useState(() => readStoredSession())
   const [taskForm, setTaskForm] = useState(EMPTY_FORM)
   const [editingTaskId, setEditingTaskId] = useState(null)
 
   const refreshPromiseRef = useRef(null)
   const isLoggedIn = Boolean(session.accessToken)
 
-  const apiRows = useMemo(() => {
-    return Object.entries(apiDocs.paths)
-      .flatMap(([path, handlers]) => {
-        return METHOD_ORDER.filter((method) => handlers[method]).map((method) => {
-          const endpoint = handlers[method]
-          return {
-            id: `${method}-${path}`,
-            method,
-            path,
-            summary: endpoint.summary ?? endpoint.operationId,
-            description: endpoint.description ?? '',
-            operationId: endpoint.operationId,
-          }
-        })
-      })
-      .sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
-  }, [session])
-
   useEffect(() => {
     if (isLoggedIn) {
       void fetchTasks()
     }
   }, [isLoggedIn])
+
+  useEffect(() => {
+    if (!tasks.length) {
+      setSelectedTaskId(null)
+      return
+    }
+
+    setSelectedTaskId((currentId) =>
+      tasks.some((task) => task.id === currentId) ? currentId : tasks[0].id,
+    )
+  }, [tasks])
 
   const clearMessages = () => {
     setErrorMessage('')
@@ -161,34 +226,76 @@ function App() {
     setTaskForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  const persistSession = (nextSession) => {
+    const normalizedSession = {
+      username: nextSession.username ?? '',
+      accessToken: normalizeToken(nextSession.accessToken),
+      refreshToken: normalizeToken(nextSession.refreshToken),
+    }
+
+    writeStoredSession(normalizedSession)
+    setSession(normalizedSession)
+  }
+
+  const clearSessionState = () => {
+    clearStoredSession()
+    setSession({ username: '', accessToken: '', refreshToken: '' })
+  }
+
+  const getSessionTokens = () => {
+    const storedSession = readStoredSession()
+
+    return {
+      accessToken: normalizeToken(session.accessToken) || storedSession.accessToken,
+      refreshToken: normalizeToken(session.refreshToken) || storedSession.refreshToken,
+    }
+  }
+
+  const withAuthHeaders = (headers = {}, token) => {
+    const normalized = normalizeToken(token)
+
+    if (!normalized) {
+      return headers
+    }
+
+    return {
+      ...headers,
+      Authorization: `Bearer ${normalized}`,
+    }
+  }
+
   const resetTaskEditor = () => {
     setEditingTaskId(null)
     setTaskForm(EMPTY_FORM)
   }
 
   const logout = async (callApi = true) => {
-    if (callApi && (session.refreshToken || session.accessToken)) {
-      const tokenForLogout = session.refreshToken || session.accessToken
+    const { accessToken, refreshToken } = getSessionTokens()
+
+    if (callApi && (refreshToken || accessToken)) {
+      const tokenForLogout = refreshToken || accessToken
 
       try {
         await fetch(`${API_BASE}/auth/logout`, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${tokenForLogout}`,
-          },
+          headers: withAuthHeaders({}, tokenForLogout),
         })
       } catch {
-        // UI logout should still continue even if backend is not reachable.
+        // Local logout should still work if the backend is unavailable.
       }
     }
 
-    setSession({ username: '', accessToken: '', refreshToken: '' })
+    clearSessionState()
     setTasks([])
+    setSelectedTaskId(null)
+    clearMessages()
     resetTaskEditor()
   }
 
   const refreshTokens = async () => {
-    if (!session.refreshToken) {
+    const { refreshToken: currentRefreshToken } = getSessionTokens()
+
+    if (!currentRefreshToken) {
       throw new Error('Refresh token is missing')
     }
 
@@ -200,9 +307,7 @@ function App() {
       setIsRefreshing(true)
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.refreshToken}`,
-        },
+        headers: withAuthHeaders({}, currentRefreshToken),
       })
 
       if (!response.ok) {
@@ -210,17 +315,18 @@ function App() {
       }
 
       const payload = await response.json()
-      const { accessToken, refreshToken } = extractTokens(payload)
+      const { accessToken, refreshToken } = extractTokens(payload, response.headers)
 
       if (!accessToken) {
         throw new Error('Refresh response does not contain access token')
       }
 
-      setSession((prev) => ({
-        ...prev,
+      const storedSession = readStoredSession()
+      persistSession({
+        username: session.username || storedSession.username,
         accessToken,
-        refreshToken: refreshToken || prev.refreshToken,
-      }))
+        refreshToken: refreshToken || session.refreshToken || storedSession.refreshToken,
+      })
 
       return accessToken
     })()
@@ -236,23 +342,23 @@ function App() {
   }
 
   const apiRequest = async (path, options = {}, allowRefresh = true) => {
-    const headers = {
-      ...(options.headers ?? {}),
-      ...(session.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+    const { accessToken, refreshToken } = getSessionTokens()
+
+    if (!accessToken) {
+      throw new Error('Missing access token. Please sign in again.')
     }
+
+    const headers = withAuthHeaders(options.headers ?? {}, accessToken)
 
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
     })
 
-    if (response.status === 401 && allowRefresh && session.refreshToken) {
+    if (response.status === 401 && allowRefresh && refreshToken) {
       try {
         const freshAccessToken = await refreshTokens()
-        const retryHeaders = {
-          ...(options.headers ?? {}),
-          Authorization: `Bearer ${freshAccessToken}`,
-        }
+        const retryHeaders = withAuthHeaders(options.headers ?? {}, freshAccessToken)
 
         return fetch(`${API_BASE}${path}`, {
           ...options,
@@ -311,19 +417,19 @@ function App() {
       }
 
       const payload = await response.json()
-      const { accessToken, refreshToken } = extractTokens(payload)
+      const { accessToken, refreshToken } = extractTokens(payload, response.headers)
 
       if (!accessToken) {
         throw new Error('No access token in response. Check backend JWT payload keys.')
       }
 
-      setSession({
+      persistSession({
         username: authForm.username,
         accessToken,
         refreshToken,
       })
 
-      setMessage(authMode === 'login' ? 'Signed in successfully.' : 'Registered and signed in.')
+      setMessage(authMode === 'login' ? 'Signed in successfully.' : 'Account created and signed in.')
       setAuthForm((prev) => ({ ...prev, password: '' }))
     } catch (error) {
       setErrorMessage(error.message)
@@ -337,7 +443,7 @@ function App() {
     clearMessages()
 
     if (!taskForm.topic.trim()) {
-      setErrorMessage('Topic is required')
+      setErrorMessage('Task title is required')
       return
     }
 
@@ -371,6 +477,7 @@ function App() {
 
   const editTask = (task) => {
     setEditingTaskId(task.id)
+    setSelectedTaskId(task.id)
     setTaskForm({
       topic: task.topic ?? '',
       shortDescription: task.shortDescription ?? '',
@@ -426,224 +533,62 @@ function App() {
   }
 
   return (
-    <div className="page">
-      <header className="hero">
-        <p className="eyebrow">Todo API workspace</p>
-        <h1>JWT-powered task command center</h1>
-        <p>
-          Complete frontend for your OpenAPI spec: authentication, token refresh,
-          live tasks CRUD, and interactive endpoint reference.
-        </p>
-      </header>
-
-      <main className="grid">
-        <section className="panel auth-panel">
-          <div className="panel-head">
-            <h2>Authentication</h2>
-            <span className={`chip ${isLoggedIn ? 'ok' : 'warn'}`}>
-              {isLoggedIn ? 'Authorized' : 'Signed out'}
-            </span>
-          </div>
-
-          <div className="auth-switch">
-            <button
-              type="button"
-              className={authMode === 'login' ? 'active' : ''}
-              onClick={() => setAuthMode('login')}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              className={authMode === 'register' ? 'active' : ''}
-              onClick={() => setAuthMode('register')}
-            >
-              Register
-            </button>
-          </div>
-
-          <form className="form" onSubmit={submitAuth}>
-            <label>
-              Username
-              <input
-                value={authForm.username}
-                onChange={(event) => updateAuthField('username', event.target.value)}
-                required
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={authForm.password}
-                onChange={(event) => updateAuthField('password', event.target.value)}
-                required
-              />
-            </label>
-
-            {authMode === 'register' ? (
-              <label>
-                Email
-                <input
-                  type="email"
-                  value={authForm.email}
-                  onChange={(event) => updateAuthField('email', event.target.value)}
-                />
-              </label>
-            ) : null}
-
-            <button disabled={isLoading} type="submit" className="primary">
-              {isLoading ? 'Please wait...' : authMode === 'login' ? 'Sign in' : 'Create account'}
-            </button>
-          </form>
-
-          <div className="token-box">
-            <p>Access token</p>
-            <code>{session.accessToken ? `${session.accessToken.slice(0, 26)}...` : 'none'}</code>
-            <p>Refresh token</p>
-            <code>{session.refreshToken ? `${session.refreshToken.slice(0, 26)}...` : 'none'}</code>
-          </div>
-
-          {isLoggedIn ? (
-            <div className="auth-actions">
-              <button type="button" onClick={() => refreshTokens().catch((e) => setErrorMessage(e.message))}>
-                {isRefreshing ? 'Refreshing...' : 'Refresh token'}
-              </button>
-              <button type="button" className="ghost" onClick={() => logout(true)}>
-                Logout
-              </button>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="panel tasks-panel">
-          <div className="panel-head">
-            <h2>Tasks</h2>
-            <button type="button" className="ghost" onClick={() => fetchTasks()} disabled={!isLoggedIn || isLoading}>
-              Reload
-            </button>
-          </div>
-
-          <form className="task-form" onSubmit={saveTask}>
-            <label>
-              Topic
-              <input
-                value={taskForm.topic}
-                onChange={(event) => updateTaskField('topic', event.target.value)}
-                placeholder="Plan sprint demo"
-                disabled={!isLoggedIn}
-                required
-              />
-            </label>
-
-            <div className="row two-col">
-              <label>
-                Importance (1-10)
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={taskForm.importance}
-                  onChange={(event) => updateTaskField('importance', event.target.value)}
-                  disabled={!isLoggedIn}
-                />
-              </label>
-
-              <label>
-                Deadline
-                <input
-                  type="datetime-local"
-                  value={taskForm.deadline}
-                  onChange={(event) => updateTaskField('deadline', event.target.value)}
-                  disabled={!isLoggedIn}
-                />
-              </label>
-            </div>
-
-            <label>
-              Short description
-              <input
-                value={taskForm.shortDescription}
-                onChange={(event) => updateTaskField('shortDescription', event.target.value)}
-                disabled={!isLoggedIn}
-              />
-            </label>
-
-            <label>
-              Long description
-              <textarea
-                value={taskForm.longDescription}
-                onChange={(event) => updateTaskField('longDescription', event.target.value)}
-                rows="3"
-                disabled={!isLoggedIn}
-              />
-            </label>
-
-            <div className="task-actions">
-              <button type="submit" className="primary" disabled={!isLoggedIn || isLoading}>
-                {editingTaskId ? 'Update task' : 'Create task'}
-              </button>
-              {editingTaskId ? (
-                <button type="button" onClick={resetTaskEditor}>
-                  Cancel edit
-                </button>
-              ) : null}
-            </div>
-          </form>
-
-          {message ? <div className="message ok">{message}</div> : null}
-          {errorMessage ? <div className="message error">{errorMessage}</div> : null}
-
-          <ul className="task-list">
-            {tasks.map((task) => (
-              <li key={task.id} className={`task-item ${task.complete ? 'done' : ''}`}>
-                <div>
-                  <h3>{task.topic}</h3>
-                  <p>
-                    Importance: {task.importance ?? '-'} | Deadline:{' '}
-                    {task.deadline ? new Date(task.deadline).toLocaleString() : '-'}
-                  </p>
-                </div>
-
-                <div className="task-item-actions">
-                  <button type="button" onClick={() => toggleTask(task.id)} disabled={!isLoggedIn}>
-                    Toggle
-                  </button>
-                  <button type="button" onClick={() => editTask(task)} disabled={!isLoggedIn}>
-                    Edit
-                  </button>
-                  <button type="button" className="danger" onClick={() => removeTask(task.id)} disabled={!isLoggedIn}>
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="panel api-panel">
-          <div className="panel-head">
-            <h2>OpenAPI Reference</h2>
-            <span className="chip">{apiRows.length} endpoints</span>
-          </div>
-
-          <div className="api-list">
-            {apiRows.map((row) => (
-              <article key={row.id} className="api-row">
-                <div className="api-main">
-                  <span className={`method ${METHOD_CLASS[row.method]}`}>{row.method.toUpperCase()}</span>
-                  <code>{row.path}</code>
-                </div>
-                <h3>{row.summary}</h3>
-                <p>{row.description || 'No description'}</p>
-                <small>operationId: {row.operationId}</small>
-              </article>
-            ))}
-          </div>
-        </section>
-      </main>
-    </div>
+    <Routes>
+      <Route
+        path="/"
+        element={<Navigate to={isLoggedIn ? '/tasks' : '/auth'} replace />}
+      />
+      <Route
+        path="/auth"
+        element={
+          isLoggedIn ? (
+            <Navigate to="/tasks" replace />
+          ) : (
+            <AuthPage
+              authForm={authForm}
+              authMode={authMode}
+              errorMessage={errorMessage}
+              isLoading={isLoading}
+              message={message}
+              setAuthMode={setAuthMode}
+              submitAuth={submitAuth}
+              updateAuthField={updateAuthField}
+            />
+          )
+        }
+      />
+      <Route
+        path="/tasks"
+        element={
+          isLoggedIn ? (
+            <TasksPage
+              editingTaskId={editingTaskId}
+              errorMessage={errorMessage}
+              fetchTasks={fetchTasks}
+              isLoading={isLoading}
+              isRefreshing={isRefreshing}
+              message={message}
+              onEditTask={editTask}
+              onLogout={logout}
+              onRefreshTokens={refreshTokens}
+              onRemoveTask={removeTask}
+              onSaveTask={saveTask}
+              onSelectTask={setSelectedTaskId}
+              onToggleTask={toggleTask}
+              resetTaskEditor={resetTaskEditor}
+              selectedTaskId={selectedTaskId}
+              session={session}
+              taskForm={taskForm}
+              tasks={tasks}
+              updateTaskField={updateTaskField}
+            />
+          ) : (
+            <Navigate to="/auth" replace />
+          )
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
 
